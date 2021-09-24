@@ -159,6 +159,8 @@ pub fn parse_from<S: std::io::Read>(src: S) -> Result<Vec<types::Clause>, Dimacs
     if clauses.len() == 0 {
         return Err(DimacsError::Error(0, String::from("No clauses!")));
     }
+    // TODO: confirm the number of clauses matches what the header claims, and
+    // perhaps also that the only variables we see are on [1..num_vars] ?
 
     Ok(clauses)
 }
@@ -184,12 +186,42 @@ c
     }
 
     #[test]
+    fn clauseless_file() {
+        let text = "c  simple_v3_c2.cnf
+p cnf 0 0
+";
+        let mut file = tempfile().expect("cnf file creation");
+        file.write_all(text.as_bytes()).expect("cnf file write");
+        parse_from(file).expect_err("Should complain about no clauses");
+    }
+
+    #[test]
     fn basics_str() {
         let text = "c  simple_v3_c2.cnf
 c
 p cnf 3 2
 1 -3 0
 2 3 -1 0
+";
+        let cursor = Cursor::new(text);
+        let clauses = parse_from(cursor).expect("Parsing should succeed");
+        assert!(clauses.len() == 2);
+        assert!(clauses[0] == vec![
+                Variable::Unassigned(Atom::Positive(1)), 
+                Variable::Unassigned(Atom::Negative(3))]);
+        assert!(clauses[1] == vec![
+                Variable::Unassigned(Atom::Positive(2)), 
+                Variable::Unassigned(Atom::Positive(3)), 
+                Variable::Unassigned(Atom::Negative(1))]);
+    }
+
+    #[test]
+    fn single_line_str() {
+        // The same test as basics_str, but verifies that 0 delimits clauses
+        // and not newlines.
+        let text = "c  simple_v3_c2.cnf
+p cnf 3 2
+1 -3 0 2 3 -1 0
 ";
         let cursor = Cursor::new(text);
         let clauses = parse_from(cursor).expect("Parsing should succeed");
