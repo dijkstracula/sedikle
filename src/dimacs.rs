@@ -2,7 +2,7 @@ use core::fmt;
 use std::io::{BufRead, BufReader};
 use std::str::FromStr;
 
-use crate::types;
+use crate::types::{self, Clause, Literal};
 
 /* CNF input parsing routines.  Format taken from:
  * https://www.cs.utexas.edu/users/moore/acl2/manuals/current/manual/index-seo.php/SATLINK____DIMACS
@@ -84,7 +84,7 @@ pub fn parse_from<S: std::io::Read>(src: S) -> Result<Vec<types::Clause>, Dimacs
 
     let mut clauses: Vec<types::Clause> = Vec::new();
 
-    let mut curr_clause = types::Clause::new();
+    let mut curr_literals: Vec<Literal> = Vec::new();
 
     for (line_num, line) in lines.enumerate() {
         let line = line?;
@@ -93,14 +93,14 @@ pub fn parse_from<S: std::io::Read>(src: S) -> Result<Vec<types::Clause>, Dimacs
         match tokens.peek() {
             None => {
                 /* We better not be in the midst of parsing a clause. */
-                if curr_clause.len() > 0 {
+                if curr_literals.len() > 0 {
                     return Err(DimacsError::UnexpectedEOF);
                 }
                 break;
             }
             Some(&"c") => {
                 /* Drop comments; if we're in the middle of a clause, error out. */
-                if curr_clause.len() > 0 {
+                if curr_literals.len() > 0 {
                     return Err(DimacsError::Error(
                         line_num,
                         "Unterminated clause before comment line".to_string(),
@@ -146,10 +146,10 @@ pub fn parse_from<S: std::io::Read>(src: S) -> Result<Vec<types::Clause>, Dimacs
                 while let Some(_) = tokens.peek() {
                     let v: i64 = tokenise(&mut tokens, line_num, "var")?;
                     if v == 0 {
-                        clauses.push(curr_clause);
-                        curr_clause = Vec::new();
+                        clauses.push(Clause::from_variables(curr_literals));
+                        curr_literals = Vec::new();
                     } else {
-                        curr_clause.push(types::Variable::from_dimacs_token(v))
+                        curr_literals.push(Literal::from_dimacs_token(v))
                     }
                 }
             }
@@ -171,9 +171,9 @@ mod test {
 
     use tempfile::tempfile;
 
-    use super::parse_from;
+    use crate::types::{Clause, Literal};
 
-    use crate::types::{Atom, Variable};
+    use super::parse_from;
 
     #[test]
     fn empty_file() {
@@ -206,13 +206,14 @@ p cnf 3 2
         let cursor = Cursor::new(text);
         let clauses = parse_from(cursor).expect("Parsing should succeed");
         assert!(clauses.len() == 2);
-        assert!(clauses[0] == vec![
-                Variable::Unassigned(Atom::Positive(1)), 
-                Variable::Unassigned(Atom::Negative(3))]);
-        assert!(clauses[1] == vec![
-                Variable::Unassigned(Atom::Positive(2)), 
-                Variable::Unassigned(Atom::Positive(3)), 
-                Variable::Unassigned(Atom::Negative(1))]);
+        assert!(clauses[0] == Clause::from_variables(vec![
+                Literal::Positive(1), 
+                Literal::Negative(3)]));
+        assert!(clauses[1] == Clause::from_variables(vec![
+                Literal::Positive(2), 
+                Literal::Positive(3),
+                Literal::Negative(1), 
+                ]));
     }
 
     #[test]
@@ -226,12 +227,13 @@ p cnf 3 2
         let cursor = Cursor::new(text);
         let clauses = parse_from(cursor).expect("Parsing should succeed");
         assert!(clauses.len() == 2);
-        assert!(clauses[0] == vec![
-                Variable::Unassigned(Atom::Positive(1)), 
-                Variable::Unassigned(Atom::Negative(3))]);
-        assert!(clauses[1] == vec![
-                Variable::Unassigned(Atom::Positive(2)), 
-                Variable::Unassigned(Atom::Positive(3)), 
-                Variable::Unassigned(Atom::Negative(1))]);
+        assert!(clauses[0] == Clause::from_variables(vec![
+                Literal::Positive(1), 
+                Literal::Negative(3)]));
+        assert!(clauses[1] == Clause::from_variables(vec![
+                Literal::Positive(2), 
+                Literal::Positive(3),
+                Literal::Negative(1), 
+                ]));
     }
 }
