@@ -1,3 +1,3 @@
-mod dimacs;
+pub mod dimacs;
 pub mod solvers;
-mod types;
+pub mod types;

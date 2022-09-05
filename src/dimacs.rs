@@ -4,6 +4,7 @@ use std::str::FromStr;
 
 use crate::types::{self, Clause, Literal};
 
+
 /* CNF input parsing routines.  Format taken from:
  * https://www.cs.utexas.edu/users/moore/acl2/manuals/current/manual/index-seo.php/SATLINK____DIMACS
  *
@@ -39,6 +40,7 @@ impl From<std::io::Error> for DimacsError {
     }
 }
 
+#[derive(Debug)]
 struct ParserState {
     header_line: usize,
     vars_seen: Vec<bool>,
@@ -47,12 +49,12 @@ struct ParserState {
 }
 
 impl ParserState {
-    fn new(header_line: usize, expected_clauses: usize, expected_vars: usize) -> ParserState {
+    fn new(header_line: usize, expected_vars: usize, expected_clauses: usize) -> ParserState {
         ParserState {
             header_line: header_line,
-            vars_seen: Vec::new(),
-            expected_clauses: expected_clauses,
+            vars_seen: vec![false; expected_vars + 1],
             expected_vars: expected_vars,
+            expected_clauses: expected_clauses,
         }
     }
 }
@@ -136,27 +138,37 @@ pub fn parse_from<S: std::io::Read>(src: S) -> Result<Vec<types::Clause>, Dimacs
                 }
             }
             Some(_) => {
-                if state.is_none() {
-                    return Err(DimacsError::Error(
-                            line_num,
-                            format!("Saw a clause before a DIMACS header")));
-                }
-
-                /* TODO: this is kinda gnarly */
-                while let Some(_) = tokens.peek() {
-                    let v: i64 = tokenise(&mut tokens, line_num, "var")?;
-                    if v == 0 {
-                        clauses.push(Clause::from_variables(curr_literals));
-                        curr_literals = Vec::new();
-                    } else {
-                        curr_literals.push(Literal::from_dimacs_token(v))
+                match &mut state {
+                    None => {
+                        return Err(DimacsError::Error(
+                                line_num,
+                                format!("Saw a clause before a DIMACS header")));
+                    }
+                    Some(s) => {
+                        /* TODO: this is kinda gnarly */
+                        while let Some(_) = tokens.peek() {
+                            let v: i64 = tokenise(&mut tokens, line_num, "var")?;
+                            if v == 0 {
+                                clauses.push(Clause::from_variables(curr_literals));
+                                curr_literals = Vec::new();
+                            } else {
+                                let lit = Literal::from_dimacs_token(v);
+                                if lit.var() > s.expected_vars {
+                                    return Err(DimacsError::Error(line_num, format!("Var {v} > {}", s.expected_vars)));
+                                }
+                                s.vars_seen[lit.var()] = true;
+                                curr_literals.push(lit);
+                            }
+                        }
                     }
                 }
+
             }
         }
     }
 
     if clauses.len() == 0 {
+        // TODO: are empty lines permitted?
         return Err(DimacsError::Error(0, String::from("No clauses!")));
     }
     // TODO: confirm the number of clauses matches what the header claims, and
@@ -173,7 +185,7 @@ mod test {
 
     use crate::types::{Clause, Literal};
 
-    use super::parse_from;
+    use super::*;
 
     #[test]
     fn empty_file() {

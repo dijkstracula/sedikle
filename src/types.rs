@@ -21,6 +21,13 @@ impl Literal {
             Self::Negative(v) => *v,
         }
     }
+
+    pub fn as_bool(&self) -> bool {
+        match self {
+            Self::Positive(_) => true,
+            Self::Negative(_) => false,
+        }
+    }
 }
 
 /* 
@@ -47,8 +54,15 @@ impl Clause {
         // TODO: avoid copying??
         Clause(vars)
     }
+
+    pub fn eval(&self, assignments: &Vec<bool>) -> bool {
+        self.0.iter()
+            .fold(false, 
+                |curr, v| curr || (v.as_bool() == assignments[v.var() - 1]))
+    }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Conjunction {
     pub disjunctions: Vec<Clause>,
     pub atom_domain: Range<usize>,
@@ -62,8 +76,7 @@ impl Conjunction {
             .map(|l| l.var())
             .fold((usize::MAX, usize::MIN), |curr, i| (curr.0.min(i), curr.1.max(i)));
         
-        assert!(min_max.0 == 0); // Just for now.
-
+        assert!(min_max.0 == 1); // Just for now.
 
         Conjunction {
             atom_domain: Range {start: min_max.0, end: min_max.1 + 1},
@@ -73,14 +86,27 @@ impl Conjunction {
 }
 
 // A model is an enumeration of assignments to a formula.
-#[derive(Clone, Debug)]
-pub struct Model {
-    pub atom_domain: Range<usize>,
-    pub assignments: Vec<bool>,
+#[derive(Clone, Debug, PartialEq)]
+pub struct Model<'a> {
+    pub cnf: &'a Conjunction,
+    pub assignments: Vec<Option<bool>>
 }
 
-#[derive(Clone, Debug)]
-pub enum Result {
-    Sat(Model), 
+impl<'a> Model<'a> {
+    // TODO: evaling a model should probably produce values for each literal, not the
+    // final thing.
+    pub fn eval(&self) -> bool {
+        let unwrapped: Vec<bool> = self.assignments.iter()
+            .map(|ob| ob.unwrap())
+            .collect();
+
+        self.cnf.disjunctions.iter()
+            .fold(true, |curr, clause| curr && clause.eval(&unwrapped))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Result<'a> {
+    Sat(&'a Model<'a>), 
     Unsat, // Core?
 }
